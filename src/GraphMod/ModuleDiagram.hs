@@ -5,22 +5,28 @@
 module GraphMod.ModuleDiagram where
 
 import Diagrams.Prelude
-import Diagrams.Backend.SVG
+--import Diagrams.Backend.SVG
+import Diagrams.Backend.Cairo
 import GraphMod.Utils
 
 import Data.Tree
-import Data.List (sortOn)
+import Data.List (sortOn,isPrefixOf)
 
 make_diagrams :: [(ModName,[Import])] -> IO ()
 make_diagrams fs = do
-      renderSVG' "deps.svg" (SVGOptions (mkWidth 3000) Nothing "" [] True) diag
+      --renderSVG' "deps.svg" (SVGOptions (mkWidth 3000) Nothing "" [] True) diag
+      renderCairo "deps.png" (mkWidth 20000) diag
       --putStrLn $ drawForest (fmap (fmap fst) utrees)
       --putStrLn $ drawForest (fmap (fmap (\(_,qname,_) -> qname)) qtrees)
    where
-      diag :: QDiagram SVG V2 Float Any
+      --diag :: QDiagram SVG V2 Float Any
       diag = moduleForest
       
-      moduleForest = hsep 2 (map diagModuleForest qtrees) # connectModules (extractForestChildren qtrees)
+      moduleForest = hsep 2 (map diagModuleForest qtrees) 
+                        # connectModules (extractForestChildren qtrees)
+                        # connectDeps [ (joinModName name,imp) | (name,is) <- fs
+                                                               , imp <- is
+                                                               ]
 
       moduleArrow m1 m2 = connectOutside' (with & shaftStyle %~ lwG 0.1
                                                 & headLength .~ global 1
@@ -28,8 +34,38 @@ make_diagrams fs = do
                                                 & arrowHead .~ mempty
                                           ) m1 m2
 
+      depArrow m1 m2    = connectOutside' (with & shaftStyle %~ lwG 0.1 . lc blue . opacity 0.5
+                                                & headLength .~ global 1
+                                                & tailLength .~ global 1
+                                                & arrowShaft .~ (arc yDir (1/8 @@ turn))
+                                          ) m1 m2
+
+      sourceArrow m1 m2 = connectOutside' (with & shaftStyle %~ lwG 0.1 . lc red . opacity 0.5
+                                                & headLength .~ global 1
+                                                & tailLength .~ global 1
+                                                & arrowShaft .~ (arc yDir (1/8 @@ turn))
+                                          ) m1 m2
+
       connectModules [] d         = d
       connectModules ((a,b):cs) d = connectModules cs (d # moduleArrow a b)
+
+      connectDeps [] d                             = d
+      connectDeps ((name,Import iname itype):cs) d =
+         connectDeps cs (d # if filterImport (joinModName iname)
+                                 then arr name (joinModName iname)
+                                 else id
+                        )
+         where
+            filterImport x = not ("GHC.Entity." `isPrefixOf` x
+                                 ||"GHC.Utils" `isPrefixOf` x
+                                 ||"GHC.Data." `isPrefixOf` x
+                                 )
+            arr = case itype of
+                     NormalImp -> depArrow
+                     SourceImp -> sourceArrow
+
+      existingModules = fmap (joinModName . fst) fs
+      doesModuleExist m = any (== m) existingModules
 
       extractNodeChildren node = [ (getQualifiedName node, getQualifiedName c) | c <- subForest node] ++ extractForestChildren (subForest node)
       extractForestChildren = concatMap extractNodeChildren
@@ -46,7 +82,8 @@ make_diagrams fs = do
 
       drawModule (lbl,qname,_) =
          (text lbl 
-         <> rect 10 2 # lwG 0.2) # named qname
+         <> rect 10 2 # lwG 0.2 # if doesModuleExist qname then id else dashingG [0.3,0.3] 0
+         ) # named qname
 
       maxChildren :: Tree a -> Int
       maxChildren (Node _ []) = 1

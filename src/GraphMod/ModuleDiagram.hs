@@ -6,7 +6,8 @@ module GraphMod.ModuleDiagram where
 
 import Diagrams.Prelude
 --import Diagrams.Backend.SVG
-import Diagrams.Backend.Cairo
+--import Diagrams.Backend.Cairo
+import Diagrams.Backend.Rasterific
 import GraphMod.Utils
 
 import Data.Tree
@@ -15,20 +16,44 @@ import Data.List (sortOn,isPrefixOf)
 make_diagrams :: [(ModName,[Import])] -> IO ()
 make_diagrams fs = do
       --renderSVG' "deps.svg" (SVGOptions (mkWidth 3000) Nothing "" [] True) diag
-      renderCairo "deps.png" (mkWidth 20000) diag
-      --putStrLn $ drawForest (fmap (fmap fst) utrees)
-      --putStrLn $ drawForest (fmap (fmap (\(_,qname,_) -> qname)) qtrees)
+      --renderCairo "deps.png" (mkWidth 20000) diag
+      renderRasterific "deps.png" (mkWidth 10000) diag
    where
+      -- filterImport modName importName = not (  "GHC.Entity."      `isPrefixOf` importName
+      --                                       || "GHC.Utils"        `isPrefixOf` importName
+      --                                       || "GHC.Data."        `isPrefixOf` importName
+      --                                       || "GHC.Config.Flags" `isPrefixOf` importName
+      --                                       )
+      filterImport modName importName = "GHC.IR.Haskell.TypeChecker" `isPrefixOf` importName
+      --filterImport = const True
+
+
+      -- unqualified forest (name,value)
+      utrees = treeMergeAll [ treeMake qname imps | (qname,imps) <- fs]
+
+      -- qualified forest (name,qualified name,value)
+      qtrees :: Forest (String,String,Maybe [Import])
+      qtrees = fmap treeQualify utrees
+
+      -- show siblings dependencies
+      siblingDeps = False
+
+      -- show parent-to-child and child-to-parent dependencies
+      parentToChildDeps = False
+      childToParentDeps = False
+      
+
       --diag :: QDiagram SVG V2 Float Any
+      diag :: QDiagram Rasterific V2 Float Any
       diag = moduleForest
       
       moduleForest = hsep 2 (map diagModuleForest qtrees) 
                         # connectModules (extractForestChildren qtrees)
-                        # connectDeps [ (joinModName name,imp) | (name,is) <- fs
-                                                               , imp <- is
-                                                               ]
+                        # connectDeps [ (name,imp) | (name,is) <- fs
+                                                   , imp <- is
+                                                   ]
 
-      moduleArrow m1 m2 = connectOutside' (with & shaftStyle %~ lwG 0.1
+      moduleArrow m1 m2 = connectOutside' (with & shaftStyle %~ lwG 0.1 . lc gray
                                                 & headLength .~ global 1
                                                 & tailLength .~ global 1
                                                 & arrowHead .~ mempty
@@ -37,32 +62,41 @@ make_diagrams fs = do
       depArrow m1 m2    = connectOutside' (with & shaftStyle %~ lwG 0.1 . lc blue . opacity 0.5
                                                 & headLength .~ global 1
                                                 & tailLength .~ global 1
-                                                & arrowShaft .~ (arc yDir (1/8 @@ turn))
+                                                & arrowShaft .~ (arc yDir (1/24 @@ turn))
+                                                & headStyle  %~ fc blue
                                           ) m1 m2
 
       sourceArrow m1 m2 = connectOutside' (with & shaftStyle %~ lwG 0.1 . lc red . opacity 0.5
                                                 & headLength .~ global 1
                                                 & tailLength .~ global 1
-                                                & arrowShaft .~ (arc yDir (1/8 @@ turn))
+                                                & arrowShaft .~ (arc yDir (1/24 @@ turn))
+                                                & headStyle  %~ fc red
                                           ) m1 m2
 
       connectModules [] d         = d
       connectModules ((a,b):cs) d = connectModules cs (d # moduleArrow a b)
 
       connectDeps [] d                             = d
-      connectDeps ((name,Import iname itype):cs) d =
-         connectDeps cs (d # if filterImport (joinModName iname)
-                                 then arr name (joinModName iname)
+      connectDeps ((mname,Import imname itype):cs) d =
+         connectDeps cs (d # if filters
+                                 then arr name iname
                                  else id
                         )
          where
-            filterImport x = not ("GHC.Entity." `isPrefixOf` x
-                                 ||"GHC.Utils" `isPrefixOf` x
-                                 ||"GHC.Data." `isPrefixOf` x
-                                 )
+            iname   = joinModName imname
+            name    = joinModName mname
+
+            filters = filterImport name iname
+                      && (siblingDeps || fst imname /= fst mname)
+                      && (parentToChildDeps || fst imname /= (fst mname ++[snd mname]))
+                      && (childToParentDeps || fst mname /= (fst imname ++[snd imname]))
+
             arr = case itype of
                      NormalImp -> depArrow
                      SourceImp -> sourceArrow
+
+      filterModuleImports f (mname,imports) = (mname, filter (f mname) imports)
+         
 
       existingModules = fmap (joinModName . fst) fs
       doesModuleExist m = any (== m) existingModules
@@ -74,7 +108,7 @@ make_diagrams fs = do
 
       diagModuleForest (Node v []) = drawModule v
       diagModuleForest n@(Node v cs) =
-         vsep (fromIntegral $ sumChildren n)
+         vsep (2*sqrt (1 + fromIntegral (sumChildren n)))
          [ drawModule v
          , center (hsep 1 (map diagModuleForest cs))
          ]
@@ -82,7 +116,7 @@ make_diagrams fs = do
 
       drawModule (lbl,qname,_) =
          (text lbl 
-         <> rect 10 2 # lwG 0.2 # if doesModuleExist qname then id else dashingG [0.3,0.3] 0
+         <> rect 14 2 # lwG 0.2 # lc gray # if doesModuleExist qname then id else dashingG [0.3,0.3] 0
          ) # named qname
 
       maxChildren :: Tree a -> Int
@@ -93,12 +127,6 @@ make_diagrams fs = do
       sumChildren (Node _ []) = 1
       sumChildren (Node _ cs) = max (length cs) (sum (fmap sumChildren cs))
 
-      -- unqualified forest (name,value)
-      utrees = treeMergeAll [ treeMake qname imps | (qname,imps) <- fs]
-
-      -- qualified forest (name,qualified name,value)
-      qtrees :: Forest (String,String,Maybe [Import])
-      qtrees = fmap treeQualify utrees
 
 
 treeQualify :: Tree (String, Maybe a) -> Tree (String,String,Maybe a)

@@ -1,6 +1,6 @@
-module CabalSupport (parseCabalFile,Unit(..),UnitName(..)) where
+module GraphMod.CabalSupport (parseCabalFile,Unit(..),UnitName(..)) where
 
-import Utils(ModName)
+import GraphMod.Utils(ModName)
 
 import Data.Maybe(maybeToList)
 import System.FilePath((</>))

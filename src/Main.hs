@@ -1,6 +1,9 @@
-import Utils
-import qualified Trie
-import CabalSupport(parseCabalFile,Unit(..))
+import GraphMod.Utils
+import qualified GraphMod.Trie as Trie
+import GraphMod.CabalSupport(parseCabalFile,Unit(..))
+import GraphMod.Types
+import GraphMod.ModuleDiagram
+
 import Text.Dot
 
 import Control.Monad(when,forM_,msum,guard,unless)
@@ -33,7 +36,8 @@ main = do xs <- getArgs
                   do (incs,inps) <- fromCabal (use_cabal opts)
                      g <- graph (foldr add_inc (add_current opts) incs)
                                 (inps ++ map to_input ms)
-                     putStr (make_dot opts g)
+                     --putStr (make_dot opts g)
+                     make_diagrams g
               where opts = foldr ($) default_opts fs
 
             _ -> hPutStrLn stderr $
@@ -50,33 +54,6 @@ to_input m
   | otherwise                       = Module (splitModName m)
 
 
-
-type Nodes   = Trie.Trie String [((NodeT,String),Int)]
-                    -- Maps a path to:   ((node, label), nodeId)
-
-type Edges    = IMap.IntMap ISet.IntSet
-
-data NodeT    = ModuleNode
-
-              | ModuleInItsCluster
-                -- ^ A module that has been relocated to its cluster
-
-              | Redirect
-                -- ^ This is not rendered. It is there to support replacing
-                -- one node with another (e.g., when collapsing)
-
-              | Deleted
-                -- ^ This is not rendered, and edges to/from it are also
-                -- not rendered.
-
-              | CollapsedNode Bool
-                -- ^ indicates if it contains module too.
-                deriving (Show,Eq,Ord)
-
-data AllEdges = AllEdges
-  { normalEdges   :: Edges
-  , sourceEdges   :: Edges
-  }
 
 noEdges :: AllEdges
 noEdges = AllEdges { normalEdges    = IMap.empty

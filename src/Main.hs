@@ -34,10 +34,11 @@ main = do xs <- getArgs
 
                | otherwise ->
                   do (incs,inps) <- fromCabal (use_cabal opts)
-                     g <- graph (foldr add_inc (add_current opts) incs)
-                                (inps ++ map to_input ms)
+                     -- g <- graph (foldr add_inc (add_current opts) incs)
+                     --            (inps ++ map to_input ms)
                      --putStr (make_dot opts g)
-                     make_diagrams g
+                     hsfiles <- traverse parseFile ms
+                     make_diagrams hsfiles
               where opts = foldr ($) default_opts fs
 
             _ -> hPutStrLn stderr $

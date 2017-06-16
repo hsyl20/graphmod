@@ -13,16 +13,20 @@ import Data.List (sortOn)
 
 make_diagrams :: [(ModName,[Import])] -> IO ()
 make_diagrams fs = do
-      renderSVG' "deps.svg" (SVGOptions (mkWidth 1000) Nothing "" [] True) diag
-      putStrLn $ drawForest (fmap (fmap fst) utrees)
-      putStrLn $ drawForest (fmap (fmap (\(_,qname,_) -> qname)) qtrees)
+      renderSVG' "deps.svg" (SVGOptions (mkWidth 3000) Nothing "" [] True) diag
+      --putStrLn $ drawForest (fmap (fmap fst) utrees)
+      --putStrLn $ drawForest (fmap (fmap (\(_,qname,_) -> qname)) qtrees)
    where
       diag :: QDiagram SVG V2 Float Any
       diag = moduleForest
       
       moduleForest = hsep 2 (map diagModuleForest qtrees) # connectModules (extractForestChildren qtrees)
 
-      moduleArrow m1 m2 = connectPerim m1 m2 (3/4 @@ turn) (1/4 @@ turn)
+      moduleArrow m1 m2 = connectOutside' (with & shaftStyle %~ lwG 0.1
+                                                & headLength .~ global 1
+                                                & tailLength .~ global 1
+                                                & arrowHead .~ mempty
+                                          ) m1 m2
 
       connectModules [] d         = d
       connectModules ((a,b):cs) d = connectModules cs (d # moduleArrow a b)
@@ -33,15 +37,24 @@ make_diagrams fs = do
       getQualifiedName (Node (_,qname,_) _) = qname
 
       diagModuleForest (Node v []) = drawModule v
-      diagModuleForest (Node v cs) =
-         vsep 5
+      diagModuleForest n@(Node v cs) =
+         vsep (fromIntegral $ sumChildren n)
          [ drawModule v
          , center (hsep 1 (map diagModuleForest cs))
          ]
 
 
       drawModule (lbl,qname,_) =
-         (text lbl <> rect 15 2) # named qname
+         (text lbl 
+         <> rect 10 2 # lwG 0.2) # named qname
+
+      maxChildren :: Tree a -> Int
+      maxChildren (Node _ []) = 1
+      maxChildren (Node _ cs) = maximum (length cs : fmap maxChildren cs)
+
+      sumChildren :: Tree a -> Int
+      sumChildren (Node _ []) = 1
+      sumChildren (Node _ cs) = max (length cs) (sum (fmap sumChildren cs))
 
       -- unqualified forest (name,value)
       utrees = treeMergeAll [ treeMake qname imps | (qname,imps) <- fs]

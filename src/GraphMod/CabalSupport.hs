@@ -53,7 +53,7 @@ exeUnit exe = Unit { unitName    = UnitExecutable (exeName exe)
 toMod :: ModuleName -> ModName
 toMod m = case components m of
             [] -> error "Empty module name."
-            xs -> (init xs, last xs)
+            xs -> xs
 
 findUnits :: GenericPackageDescription -> [Unit]
 findUnits g = maybeToList (fmap libUnit (library pkg))  ++

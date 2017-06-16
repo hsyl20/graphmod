@@ -8,8 +8,6 @@ module GraphMod.Utils
   , ModName
   , splitModName
   , joinModName
-  , relPaths
-  , modToFile
   , suffixes
   ) where
 
@@ -17,9 +15,7 @@ import Language.Haskell.Lexer(lexerPass0,Token(..),PosToken,line)
 
 import Control.Monad(mplus)
 import Control.Exception(evaluate)
-import Data.Maybe(catMaybes)
 import Data.List(intersperse,isPrefixOf)
-import System.Directory(doesFileExist)
 import System.FilePath
 
 data Import = Import { impMod :: ModName, impType :: ImpType }
@@ -29,7 +25,7 @@ data ImpType = NormalImp | SourceImp
                 deriving (Show,Eq,Ord)
 
 -- | Get the imports of a file.
-parseFile          :: FilePath -> IO (ModName,[Import])
+parseFile :: FilePath -> IO (ModName,[Import])
 parseFile f =
   do (modName, imps) <- (parseString . get_text) `fmap` readFile f
      _ <- evaluate (length imps) -- this is here so that the file gets closed
@@ -113,7 +109,7 @@ isImp ts = attempt (1::Int) (drop 1 ts)
 parse              :: [PosToken] -> (ModName,[Import])
 parse ((Reservedid,(_,"module")) : (_,(_,m)) : is) =
                                                   (splitModName m,imports is)
-parse is            = (([],"Main"),imports is)
+parse is            = (["Main"],imports is)
 
 imports            :: [PosToken] -> [Import]
 imports ts          = case isImp $ snd $ break (("import" ==) . snd . snd) ts of
@@ -122,7 +118,7 @@ imports ts          = case isImp $ snd $ break (("import" ==) . snd . snd) ts of
 
 -- | A hierarchical module name.
 type Qualifier      = [String]
-type ModName        = (Qualifier,String)
+type ModName        = [String]
 
 
 -- | Convert a string name into a hierarchical name qualifier.
@@ -134,29 +130,16 @@ splitQualifier cs   = case break ('.'==) cs of
 -- | Convert a string name into a hierarchical name.
 splitModName       :: String -> ModName
 splitModName cs     = case break ('.'==) cs of
-                        (xs,_:ys)  -> let (as,bs) = splitModName ys
-                                   in (xs:as,bs)
-                        _ -> ([],cs)
+                        (q,s) -> q : case s of
+                                          []   -> []
+                                          _:s' -> splitModName s'
 
 joinModName        :: ModName -> String
-joinModName (xs,y)  = concat $ intersperse "." (xs ++ [y])
-
--- | The files in which a module might reside.
-relPaths           :: ModName -> [FilePath]
-relPaths (xs,y)     = [ prefix ++ suffix | suffix <- suffixes ]
-  where prefix      = foldr (</>) y xs
+joinModName xs  = concat $ intersperse "." xs
 
 suffixes           :: [String]
 suffixes            = [".hs",".lhs", ".imports"]
 
--- | The files in which a module might reside.
--- We report only files that exist.
-modToFile          :: [FilePath] -> ModName -> IO [FilePath]
-modToFile dirs m    = catMaybes `fmap` mapM check paths
-  where
-  paths             = [ d </> r | d <- dirs, r <- relPaths m ]
-  check p           = do x <- doesFileExist p
-                         return (if x then Just p else Nothing)
 
 
 delit :: String -> String

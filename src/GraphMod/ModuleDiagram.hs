@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module GraphMod.ModuleDiagram where
 
@@ -13,8 +14,21 @@ import GraphMod.Utils
 import Data.Tree
 import Data.List (sortOn,isPrefixOf)
 
-make_diagrams :: [(ModName,[Import])] -> IO ()
-make_diagrams fs = do
+type ModuleName = [String]
+
+data DepOptions = DepOptions
+   { filterModules :: ModuleName -> [Import] -> Bool
+   }
+
+defaultOptions :: DepOptions
+defaultOptions = DepOptions
+   { filterModules = \_ _ -> True
+   }
+
+
+
+make_diagrams :: DepOptions -> [(ModName,[Import])] -> IO ()
+make_diagrams DepOptions{..} rawModuleImports = do
       --renderSVG' "deps.svg" (SVGOptions (mkWidth 3000) Nothing "" [] True) diag
       --renderCairo "deps.png" (mkWidth 20000) diag
       renderRasterific "deps.png" (mkWidth 10000) diag
@@ -28,8 +42,14 @@ make_diagrams fs = do
       --filterImport = const True
 
 
+      -- First we have the list of the considered modules and their imports in
+      -- rawModuleImports
+
+      -- We allow module filtering with `filterModules`
+      filteredModules = filter (uncurry filterModules) rawModuleImports
+
       -- unqualified forest (name,value)
-      utrees = treeMergeAll [ treeMake qname imps | (qname,imps) <- fs]
+      utrees = treeMergeAll [ treeMake qname imps | (qname,imps) <- rawModuleImports]
 
       -- qualified forest (name,qualified name,value)
       qtrees :: Forest (String,String,Maybe [Import])
@@ -49,7 +69,7 @@ make_diagrams fs = do
       
       moduleForest = hsep 2 (map diagModuleForest qtrees) 
                         # connectModules (extractForestChildren qtrees)
-                        # connectDeps [ (name,imp) | (name,is) <- fs
+                        # connectDeps [ (name,imp) | (name,is) <- rawModuleImports
                                                    , imp <- is
                                                    ]
 
@@ -87,9 +107,9 @@ make_diagrams fs = do
             name    = joinModName mname
 
             filters = filterImport name iname
-                      && (siblingDeps || fst imname /= fst mname)
-                      && (parentToChildDeps || fst imname /= (fst mname ++[snd mname]))
-                      && (childToParentDeps || fst mname /= (fst imname ++[snd imname]))
+                      && (siblingDeps || init imname /= init mname)
+                      && (parentToChildDeps || init imname /= mname)
+                      && (childToParentDeps || init mname /= imname)
 
             arr = case itype of
                      NormalImp -> depArrow
@@ -98,7 +118,7 @@ make_diagrams fs = do
       filterModuleImports f (mname,imports) = (mname, filter (f mname) imports)
          
 
-      existingModules = fmap (joinModName . fst) fs
+      existingModules = fmap (joinModName . fst) rawModuleImports
       doesModuleExist m = any (== m) existingModules
 
       extractNodeChildren node = [ (getQualifiedName node, getQualifiedName c) | c <- subForest node] ++ extractForestChildren (subForest node)
@@ -137,9 +157,9 @@ treeQualify = go ""
          in Node (name,q',v) (fmap (go q') cs)
       
 treeMake :: ModName -> a -> Tree (String,Maybe a)
-treeMake ([],name) val   = Node (name,Just val) []
-treeMake (q:qs,name) val = Node (q,Nothing)
-                              [ treeMake (qs,name) val]
+treeMake [] val     = Node ("{empty}",Just val) []
+treeMake [name] val = Node (name,Just val) []
+treeMake (q:qs) val = Node (q,Nothing) [ treeMake qs val]
 
 treeMerge :: Tree (String,Maybe a) -> Tree (String,Maybe a) -> Maybe (Tree (String,Maybe a))
 treeMerge t1 t2

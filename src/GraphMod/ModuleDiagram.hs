@@ -7,42 +7,49 @@
 
 module GraphMod.ModuleDiagram where
 
-import Diagrams.Prelude
+import Diagrams.Prelude hiding ((|>))
 --import Diagrams.Backend.SVG
 import Diagrams.Backend.Rasterific
 import GraphMod.Utils
 
 import Data.Tree
-import Data.List (sortOn,isPrefixOf,nub, intersperse, sort)
+import Data.List (sortOn, isPrefixOf, intersperse, sort)
 import Data.List.Extra (nubOn)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe,mapMaybe)
 import Control.Arrow (second)
+import Haskus.Utils.Flow ((|>))
 
 type ModuleName = [String]
 
 data DepOptions = DepOptions
-   { filterModule          :: ModuleName -> [Import] -> Bool
-   , filterImport          :: ModuleName -> Import -> Bool
-   , filterExternImport    :: ModuleName -> Bool
-   , showExternModules     :: Bool                           -- ^ Show dependencies to other modules
-   , showSiblingsDeps      :: Bool
-   , showParentToChildDeps :: Bool
-   , showChildToParentDeps :: Bool
-   , arrowShaftAngle       :: Float
-   , externArrowShaftAngle :: Float
+   { filterModule           :: ModuleName -> [Import] -> Bool
+   , filterImport           :: ModuleName -> Import -> Bool
+   , filterExternImport     :: ModuleName -> Bool
+   , showExternModules      :: Bool                           -- ^ Show dependencies to other modules
+   , showIndependentModules :: Bool                           -- ^ Show modules that are neither a dependency target nor a source
+   , showSiblingsDeps       :: Bool
+   , showParentToChildDeps  :: Bool
+   , showChildToParentDeps  :: Bool
+   , showNormalDeps         :: Bool
+   , showSourceDeps         :: Bool
+   , arrowShaftAngle        :: Float
+   , externArrowShaftAngle  :: Float
    }
 
 defaultOptions :: DepOptions
 defaultOptions = DepOptions
-   { filterModule          = \_ _ -> True
-   , filterImport          = \_ _ -> True
-   , filterExternImport    = not . (["GHC"] `isPrefixOf`)
-   , showExternModules     = True
-   , showSiblingsDeps      = True
-   , showParentToChildDeps = False
-   , showChildToParentDeps = False
-   , arrowShaftAngle       = 1/24
-   , externArrowShaftAngle = 1/60
+   { filterModule           = \_ _ -> True
+   , filterImport           = \_ _ -> True
+   , filterExternImport     = not . (["GHC"] `isPrefixOf`)
+   , showExternModules      = False
+   , showIndependentModules = False
+   , showSiblingsDeps       = False
+   , showParentToChildDeps  = False
+   , showChildToParentDeps  = False
+   , showNormalDeps         = False
+   , showSourceDeps         = True
+   , arrowShaftAngle        = 1/24
+   , externArrowShaftAngle  = 1/60
    }
 
 
@@ -50,7 +57,7 @@ defaultOptions = DepOptions
 make_diagrams :: DepOptions -> [(ModName,[Import])] -> IO ()
 make_diagrams DepOptions{..} rawModuleImports = do
       --renderSVG' "deps.svg" (SVGOptions (mkWidth 3000) Nothing "" [] True) diag
-      putStrLn (drawForest (fmap (fmap (\(_,t,is) -> joinModName t ++": "++concat (intersperse "," (fmap show (fromMaybe [] is))))) qtrees))
+      -- putStrLn (drawForest (fmap (fmap (\(_,t,is) -> joinModName t ++": "++concat (intersperse "," (fmap show (fromMaybe [] is))))) moduleForest))
       renderRasterific "deps.png" (mkWidth 10000) diag
    where
       -- filterImport modName importName = not (  "GHC.Entity."      `isPrefixOf` importName
@@ -59,7 +66,7 @@ make_diagrams DepOptions{..} rawModuleImports = do
       --                                       || "GHC.Config.Flags" `isPrefixOf` importName
       --                                       )
       --filterImport modName importName = "GHC.IR.Haskell.TypeChecker" `isPrefixOf` importName
-      filterImport = \_ _ -> True
+      -- filterImport = \_ _ -> True
 
 
       -- First we have the list of the considered modules and their imports in
@@ -78,49 +85,80 @@ make_diagrams DepOptions{..} rawModuleImports = do
       externImports      = sort $ filter filterExternImport $ filter (not . doesModuleExist) (fmap importName allImports)
       isExternalModule m = any (== m) externImports
 
-      -- Now we can build a tree:
-      qtrees :: Forest (String,ModuleName,Maybe [Import])
-      qtrees = treeMergeAll [ treeMake qname imps | (qname,imps) <- finalModules]
-
       
+      -- Extract dependencies ("arrows")
       allDependencies    = [ (name,imp) | (name,is) <- finalModules, imp <- is ]
-      normalDependencies = 
-         fmap (second importName)
-         $ filter ((== NormalImp) . importType . snd) allDependencies
-      sourceDependencies = 
-         fmap (second importName)
-         $ filter ((== SourceImp) . importType . snd) allDependencies
 
+      depsFilters (name,iname) =    (showSiblingsDeps      || init iname /= init name)
+                                 && (showParentToChildDeps || init iname /= name)
+                                 && (showChildToParentDeps || init name /= iname)
+                                 && (showExternModules     || not (isExternalModule iname))
+
+      allFilteredDeps  = filter (depsFilters . second importName) allDependencies
+
+      filteredNormalDeps = if not showNormalDeps
+         then []
+         else fmap (second importName)
+              $ filter ((== NormalImp) . importType . snd) allFilteredDeps
+      filteredSourceDeps = if not showSourceDeps
+         then []
+         else fmap (second importName)
+              $ filter ((== SourceImp) . importType . snd) allFilteredDeps
+
+      -- Module tree
+      moduleForest :: Forest (String,ModuleName,Maybe [Import])
+      moduleForest = treeMergeAll [ treeMake qname imps | (qname,imps) <- finalModules]
+
+      getQualifiedName (Node (_,qname,_) _) = qname
+
+      -- prune independent modules (that are not parents of dependent ones)
+      isInDep x =    any (\(name,iname) -> name == x || iname == x) filteredNormalDeps
+                  || any (\(name,iname) -> name == x || iname == x) filteredSourceDeps
+
+      pruneTree n = if isInDep (getQualifiedName n) || not (null cs)
+                     then Just (Node (rootLabel n) cs)
+                     else Nothing
+         where cs = mapMaybe pruneTree (subForest n)
+
+      filteredModuleForest = if showIndependentModules
+         then moduleForest
+         else mapMaybe pruneTree moduleForest
+
+      -- module hierarchical links
+      extractNodeChildren node = [ (getQualifiedName node, getQualifiedName c) | c <- subForest node] ++ extractForestChildren (subForest node)
+      extractForestChildren = concatMap extractNodeChildren
+
+      moduleHierarchy = extractForestChildren filteredModuleForest
 
 
       ----------------------------------------------------
       -- Finally we draw the diagrams
       ----------------------------------------------------
 
-
       --diag :: QDiagram SVG V2 Float Any
       diag :: QDiagram Rasterific V2 Float Any
       diag = vsep 4
-               [ moduleForest
+               [ drawModuleForest
                , if showExternModules
                   then center $ hsep 2 (fmap drawExternModule externImports)
                   else mempty
                ]
-                        # connectModules (extractForestChildren qtrees)
-                        # connectDeps allDependencies
+                        |> connectModules moduleHierarchy
+                        |> connectDeps normalArrow filteredNormalDeps
+                        |> connectDeps sourceArrow filteredSourceDeps
 
-      drawExternModule m = (text mname <> rect 25 2 # lwG 0.2 # lc purple) # named mname
-         where mname = joinModName m
+      drawExternModule m = (text (joinModName mname) <> rect 25 2 # lwG 0.2 # lc purple) # named mname
+         where mname = m
       
-      moduleForest = hsep 2 (fmap diagModuleForest qtrees) 
+      drawModuleForest = hsep 2 (fmap diagModuleForest filteredModuleForest) 
 
       moduleArrow m1 m2 = connectOutside' (with & shaftStyle %~ lwG 0.1 . lc gray
                                                 & headLength .~ global 1
                                                 & tailLength .~ global 1
-                                                & arrowHead .~ mempty
+                                                & arrowHead  .~ mempty
                                           ) m1 m2
 
-      depArrow m1 m2    = connectOutside' (with & shaftStyle %~ lwG 0.1 . lc blue . opacity 0.5
+      normalArrow m1 m2    = connectOutside' (with & shaftStyle %~ lwG 0.1 . lc blue . opacity 0.5
                                                 & headLength .~ global 1
                                                 & tailLength .~ global 1
                                                 & arrowShaft .~ (arc yDir (makeArrowShaftAngle m2 @@ turn))
@@ -134,34 +172,13 @@ make_diagrams DepOptions{..} rawModuleImports = do
                                                 & headStyle  %~ fc red
                                           ) m1 m2
 
-      makeArrowShaftAngle tgt = if isExternalModule (splitModName tgt) then externArrowShaftAngle else arrowShaftAngle
+      makeArrowShaftAngle tgt = if isExternalModule tgt then externArrowShaftAngle else arrowShaftAngle
 
       connectModules [] d         = d
-      connectModules ((a,b):cs) d = connectModules cs (d # moduleArrow (joinModName a) (joinModName b))
+      connectModules ((a,b):cs) d = connectModules cs (d # moduleArrow a b)
 
-      connectDeps [] d                             = d
-      connectDeps ((mname,Import imname itype):cs) d =
-         connectDeps cs (d # if filters
-                                 then arr name iname
-                                 else id
-                        )
-         where
-            iname   = joinModName imname
-            name    = joinModName mname
-
-            filters = filterImport name iname
-                      && (showSiblingsDeps || init imname /= init mname)
-                      && (showParentToChildDeps || init imname /= mname)
-                      && (showChildToParentDeps || init mname /= imname)
-
-            arr = case itype of
-                     NormalImp -> depArrow
-                     SourceImp -> sourceArrow
-
-      extractNodeChildren node = [ (getQualifiedName node, getQualifiedName c) | c <- subForest node] ++ extractForestChildren (subForest node)
-      extractForestChildren = concatMap extractNodeChildren
-
-      getQualifiedName (Node (_,qname,_) _) = qname
+      connectDeps _ [] d                  = d
+      connectDeps arr ((name,iname):cs) d = connectDeps arr cs (d # arr name iname)
 
       diagModuleForest n
          | null (subForest n) = drawModule (rootLabel n)
@@ -177,7 +194,7 @@ make_diagrams DepOptions{..} rawModuleImports = do
          <> rect 14 2 # lwG 0.2 # lc gray # if doesModuleExist qname
                                                 then id
                                                 else dashingG [0.3,0.3] 0
-         ) # named (joinModName qname)
+         ) # named (qname)
 
       maxChildren :: Tree a -> Int
       maxChildren (Node _ []) = 1

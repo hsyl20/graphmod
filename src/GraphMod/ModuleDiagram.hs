@@ -13,9 +13,9 @@ import Diagrams.Backend.Rasterific
 import GraphMod.Utils
 
 import Data.Tree
-import Data.List (sortOn, isPrefixOf, intersperse, sort)
+import Data.List (sortOn, isPrefixOf, sort)
 import Data.List.Extra (nubOn)
-import Data.Maybe (fromMaybe,mapMaybe)
+import Data.Maybe (mapMaybe)
 import Control.Arrow (second)
 import Haskus.Utils.Flow ((|>))
 
@@ -39,35 +39,46 @@ data DepOptions = DepOptions
 defaultOptions :: DepOptions
 defaultOptions = DepOptions
    { filterModule           = \_ _ -> True
-   , filterImport           = \_ _ -> True
+   --, filterImport           = \_ _ -> True
+   , filterImport           = checkLayering ["GHC","Compiler","CoreToByteCode"] [ ["GHC","IR","ByteCode"]
+                                                                               , ["GHC","IR","Core"]
+                                                                               ]
    , filterExternImport     = not . (["GHC"] `isPrefixOf`)
    , showExternModules      = False
    , showIndependentModules = False
    , showSiblingsDeps       = False
    , showParentToChildDeps  = False
    , showChildToParentDeps  = False
-   , showNormalDeps         = False
+   , showNormalDeps         = True
    , showSourceDeps         = True
    , arrowShaftAngle        = 1/24
    , externArrowShaftAngle  = 1/60
    }
 
+ghcCommons :: [ModuleName]
+ghcCommons =
+   [ ["GHC","Entity"]
+   , ["GHC","Data"]
+   , ["GHC","Utils"]
+   , ["GHC","Builtin"]
+   , ["GHC","Config"]
+   , ["GHC","RTS"]
+   ]
+   
+checkLayering :: ModuleName -> [ModuleName] -> ModuleName -> Import -> Bool
+checkLayering layer allowed name imp =
+   (layer `isPrefixOf` name)
+   && checkLayeringFilter (importName imp) (layer : allowed ++ ghcCommons)
+
+checkLayeringFilter :: ModuleName -> [ModuleName] -> Bool
+checkLayeringFilter name allowed = not (any (`isPrefixOf` name) allowed)
 
 
 make_diagrams :: DepOptions -> [(ModName,[Import])] -> IO ()
 make_diagrams DepOptions{..} rawModuleImports = do
       --renderSVG' "deps.svg" (SVGOptions (mkWidth 3000) Nothing "" [] True) diag
-      -- putStrLn (drawForest (fmap (fmap (\(_,t,is) -> joinModName t ++": "++concat (intersperse "," (fmap show (fromMaybe [] is))))) moduleForest))
       renderRasterific "deps.png" (mkWidth 10000) diag
    where
-      -- filterImport modName importName = not (  "GHC.Entity."      `isPrefixOf` importName
-      --                                       || "GHC.Utils"        `isPrefixOf` importName
-      --                                       || "GHC.Data."        `isPrefixOf` importName
-      --                                       || "GHC.Config.Flags" `isPrefixOf` importName
-      --                                       )
-      --filterImport modName importName = "GHC.IR.Haskell.TypeChecker" `isPrefixOf` importName
-      -- filterImport = \_ _ -> True
-
 
       -- First we have the list of the considered modules and their imports in
       -- `rawModuleImports`. We allow module filtering with `filterModules`.
@@ -195,10 +206,6 @@ make_diagrams DepOptions{..} rawModuleImports = do
                                                 then id
                                                 else dashingG [0.3,0.3] 0
          ) # named (qname)
-
-      maxChildren :: Tree a -> Int
-      maxChildren (Node _ []) = 1
-      maxChildren (Node _ cs) = maximum (length cs : fmap maxChildren cs)
 
       sumChildren :: Tree a -> Int
       sumChildren (Node _ []) = 1

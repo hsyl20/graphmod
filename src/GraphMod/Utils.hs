@@ -18,8 +18,10 @@ import Control.Exception(evaluate)
 import Data.List(intersperse,isPrefixOf)
 import System.FilePath
 
-data Import = Import { impMod :: ModName, impType :: ImpType }
-                deriving Show
+data Import = Import
+   { importName :: ModName
+   , importType :: ImpType
+   } deriving Show
 
 data ImpType = NormalImp | SourceImp
                 deriving (Show,Eq,Ord)
@@ -99,7 +101,7 @@ isImp ts = attempt (1::Int) (drop 1 ts)
                                _      -> Nothing
   isMod _                   = Nothing
 
-  toImp x = Import { impMod = splitModName x, impType = isSrc }
+  toImp x = Import { importName = splitModName x, importType = isSrc }
   isSrc   = case ts of
               _ : (_,(_,x)) : _ | isSourcePragma x -> SourceImp
               _                                    -> NormalImp

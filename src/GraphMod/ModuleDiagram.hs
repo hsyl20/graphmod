@@ -13,17 +13,36 @@ import Diagrams.Backend.Rasterific
 import GraphMod.Utils
 
 import Data.Tree
-import Data.List (sortOn,isPrefixOf)
+import Data.List (sortOn,isPrefixOf,nub, intersperse, sort)
+import Data.List.Extra (nubOn)
+import Data.Maybe (fromMaybe)
+import Control.Arrow (second)
 
 type ModuleName = [String]
 
 data DepOptions = DepOptions
-   { filterModules :: ModuleName -> [Import] -> Bool
+   { filterModule          :: ModuleName -> [Import] -> Bool
+   , filterImport          :: ModuleName -> Import -> Bool
+   , filterExternImport    :: ModuleName -> Bool
+   , showExternModules     :: Bool                           -- ^ Show dependencies to other modules
+   , showSiblingsDeps      :: Bool
+   , showParentToChildDeps :: Bool
+   , showChildToParentDeps :: Bool
+   , arrowShaftAngle       :: Float
+   , externArrowShaftAngle :: Float
    }
 
 defaultOptions :: DepOptions
 defaultOptions = DepOptions
-   { filterModules = \_ _ -> True
+   { filterModule          = \_ _ -> True
+   , filterImport          = \_ _ -> True
+   , filterExternImport    = not . (["GHC"] `isPrefixOf`)
+   , showExternModules     = True
+   , showSiblingsDeps      = True
+   , showParentToChildDeps = False
+   , showChildToParentDeps = False
+   , arrowShaftAngle       = 1/24
+   , externArrowShaftAngle = 1/60
    }
 
 
@@ -31,7 +50,7 @@ defaultOptions = DepOptions
 make_diagrams :: DepOptions -> [(ModName,[Import])] -> IO ()
 make_diagrams DepOptions{..} rawModuleImports = do
       --renderSVG' "deps.svg" (SVGOptions (mkWidth 3000) Nothing "" [] True) diag
-      putStrLn (drawForest (fmap (fmap (\(_,t,_) -> joinModName t)) qtrees))
+      putStrLn (drawForest (fmap (fmap (\(_,t,is) -> joinModName t ++": "++concat (intersperse "," (fmap show (fromMaybe [] is))))) qtrees))
       renderRasterific "deps.png" (mkWidth 10000) diag
    where
       -- filterImport modName importName = not (  "GHC.Entity."      `isPrefixOf` importName
@@ -45,31 +64,55 @@ make_diagrams DepOptions{..} rawModuleImports = do
 
       -- First we have the list of the considered modules and their imports in
       -- `rawModuleImports`. We allow module filtering with `filterModules`.
-      filteredModules = filter (uncurry filterModules) rawModuleImports
+      filteredModules = filter (uncurry filterModule) rawModuleImports
+
+      -- Filter imports
+      filteredImports = fmap (\x -> second (filter (filterImport (fst x))) x) filteredModules
+
+      -- finally we have all the modules in `finalModules`
+      finalModules       = filteredImports
+      existingModules    = fmap fst finalModules
+      doesModuleExist m  = any (== m) existingModules
+
+      allImports         = nubOn importName (concatMap snd finalModules)
+      externImports      = sort $ filter filterExternImport $ filter (not . doesModuleExist) (fmap importName allImports)
+      isExternalModule m = any (== m) externImports
 
       -- Now we can build a tree:
-
-      -- unqualified forest (name,value)
       qtrees :: Forest (String,ModuleName,Maybe [Import])
-      qtrees = treeMergeAll [ treeMake qname imps | (qname,imps) <- filteredModules]
+      qtrees = treeMergeAll [ treeMake qname imps | (qname,imps) <- finalModules]
 
-      -- show siblings dependencies
-      siblingDeps = False
-
-      -- show parent-to-child and child-to-parent dependencies
-      parentToChildDeps = False
-      childToParentDeps = False
       
+      allDependencies    = [ (name,imp) | (name,is) <- finalModules, imp <- is ]
+      normalDependencies = 
+         fmap (second importName)
+         $ filter ((== NormalImp) . importType . snd) allDependencies
+      sourceDependencies = 
+         fmap (second importName)
+         $ filter ((== SourceImp) . importType . snd) allDependencies
+
+
+
+      ----------------------------------------------------
+      -- Finally we draw the diagrams
+      ----------------------------------------------------
+
 
       --diag :: QDiagram SVG V2 Float Any
       diag :: QDiagram Rasterific V2 Float Any
-      diag = moduleForest
+      diag = vsep 4
+               [ moduleForest
+               , if showExternModules
+                  then center $ hsep 2 (fmap drawExternModule externImports)
+                  else mempty
+               ]
+                        # connectModules (extractForestChildren qtrees)
+                        # connectDeps allDependencies
+
+      drawExternModule m = (text mname <> rect 25 2 # lwG 0.2 # lc purple) # named mname
+         where mname = joinModName m
       
       moduleForest = hsep 2 (fmap diagModuleForest qtrees) 
-                        # connectModules (extractForestChildren qtrees)
-                        # connectDeps [ (name,imp) | (name,is) <- filteredModules
-                                                   , imp <- is
-                                                   ]
 
       moduleArrow m1 m2 = connectOutside' (with & shaftStyle %~ lwG 0.1 . lc gray
                                                 & headLength .~ global 1
@@ -80,16 +123,18 @@ make_diagrams DepOptions{..} rawModuleImports = do
       depArrow m1 m2    = connectOutside' (with & shaftStyle %~ lwG 0.1 . lc blue . opacity 0.5
                                                 & headLength .~ global 1
                                                 & tailLength .~ global 1
-                                                & arrowShaft .~ (arc yDir (1/24 @@ turn))
+                                                & arrowShaft .~ (arc yDir (makeArrowShaftAngle m2 @@ turn))
                                                 & headStyle  %~ fc blue
                                           ) m1 m2
 
       sourceArrow m1 m2 = connectOutside' (with & shaftStyle %~ lwG 0.1 . lc red . opacity 0.5
                                                 & headLength .~ global 1
                                                 & tailLength .~ global 1
-                                                & arrowShaft .~ (arc yDir (1/24 @@ turn))
+                                                & arrowShaft .~ (arc yDir (makeArrowShaftAngle m2 @@ turn))
                                                 & headStyle  %~ fc red
                                           ) m1 m2
+
+      makeArrowShaftAngle tgt = if isExternalModule (splitModName tgt) then externArrowShaftAngle else arrowShaftAngle
 
       connectModules [] d         = d
       connectModules ((a,b):cs) d = connectModules cs (d # moduleArrow (joinModName a) (joinModName b))
@@ -105,19 +150,13 @@ make_diagrams DepOptions{..} rawModuleImports = do
             name    = joinModName mname
 
             filters = filterImport name iname
-                      && (siblingDeps || init imname /= init mname)
-                      && (parentToChildDeps || init imname /= mname)
-                      && (childToParentDeps || init mname /= imname)
+                      && (showSiblingsDeps || init imname /= init mname)
+                      && (showParentToChildDeps || init imname /= mname)
+                      && (showChildToParentDeps || init mname /= imname)
 
             arr = case itype of
                      NormalImp -> depArrow
                      SourceImp -> sourceArrow
-
-      filterModuleImports f (mname,imports) = (mname, filter (f mname) imports)
-         
-
-      existingModules = fmap (joinModName . fst) filteredModules
-      doesModuleExist m = any (== m) existingModules
 
       extractNodeChildren node = [ (getQualifiedName node, getQualifiedName c) | c <- subForest node] ++ extractForestChildren (subForest node)
       extractForestChildren = concatMap extractNodeChildren
@@ -135,7 +174,7 @@ make_diagrams DepOptions{..} rawModuleImports = do
 
       drawModule (lbl,qname,_) =
          (text lbl 
-         <> rect 14 2 # lwG 0.2 # lc gray # if doesModuleExist (joinModName qname)
+         <> rect 14 2 # lwG 0.2 # lc gray # if doesModuleExist qname
                                                 then id
                                                 else dashingG [0.3,0.3] 0
          ) # named (joinModName qname)

@@ -28,11 +28,10 @@ executable graphmod
          GraphMod.Utils
       ,  GraphMod.Trie
       ,  Paths_graphmod
-      ,  GraphMod.CabalSupport
       ,  GraphMod.ModuleDiagram
       ,  GraphMod.Types
     build-depends:   base < 5, directory, filepath, dotgen >= 0.2 && < 0.5,
-                     haskell-lexer >= 1.0.1, containers, Cabal,
+                     haskell-lexer >= 1.0.1, containers,
                      diagrams-lib, diagrams-svg, diagrams-rasterific, extra,
                      haskus-utils
     hs-source-dirs:  src

@@ -10,6 +10,7 @@ import System.Console.GetOpt
 
 import Paths_graphmod (version)
 import Data.Version (showVersion)
+import Data.List (isPrefixOf)
 
 main :: IO ()
 main = do xs <- getArgs
@@ -20,11 +21,105 @@ main = do xs <- getArgs
 
                | otherwise -> do
                      hsfiles <- traverse parseFile ms
-                     make_diagrams defaultOptions hsfiles
+                     --make_diagrams defaultOptions hsfiles
+                     make_diagrams checkLayerHaskellToCore hsfiles
+                     make_diagrams checkLayerCoreToStg hsfiles
+                     make_diagrams checkLayerCoreToByteCode hsfiles
+                     make_diagrams checkLayerCoreToInterface hsfiles
+                     make_diagrams checkLayerStgToCmm hsfiles
+                     make_diagrams checkLayerCmmToAsm hsfiles
+                     make_diagrams checkLayerCmmToLlvm hsfiles
+                     make_diagrams sourceImports hsfiles
               where opts = foldr ($) default_opts fs
 
             _ -> hPutStrLn stderr $
                   usageInfo "usage: graphmod MODULES/PATHS" options
+
+
+---------------------------------------
+-- GHC specific
+---------------------------------------
+
+ghcCommons :: [ModuleName]
+ghcCommons =
+   [ ["GHC","Entity"]
+   , ["GHC","Data"]
+   , ["GHC","Utils"]
+   , ["GHC","Builtin"]
+   , ["GHC","Config"]
+   , ["GHC","RTS"]
+   ]
+   
+checkLayering :: ModuleName -> [ModuleName] -> ModuleName -> Import -> Bool
+checkLayering layer allowed name imp =
+   (layer `isPrefixOf` name)
+   && checkLayeringFilter (importName imp) (layer : allowed ++ ghcCommons)
+
+checkLayeringFilter :: ModuleName -> [ModuleName] -> Bool
+checkLayeringFilter name allowed = not (any (`isPrefixOf` name) allowed)
+
+sourceImports :: DepOptions
+sourceImports = defaultOptions
+   { outputFile     = "ghc_source_imports.png"
+   , showNormalDeps = False
+   }
+
+checkLayerHaskellToCore :: DepOptions
+checkLayerHaskellToCore = defaultOptions
+   { outputFile = "ghc_layer_haskelltocore.png"
+   , filterImport = checkLayering ["GHC","Compiler","HaskellToCore"] [ ["GHC","IR","Haskell"]
+                                                                     , ["GHC","IR","Core"]
+                                                                     ]
+   }
+
+checkLayerCoreToStg :: DepOptions
+checkLayerCoreToStg = defaultOptions
+   { outputFile = "ghc_layer_coretostg.png"
+   , filterImport = checkLayering ["GHC","Compiler","CoreToStg"] [ ["GHC","IR","Core"]
+                                                                 , ["GHC","IR","Stg"]
+                                                                 ]
+   }
+
+checkLayerCoreToByteCode :: DepOptions
+checkLayerCoreToByteCode = defaultOptions
+   { outputFile = "ghc_layer_coretobytecode.png"
+   , filterImport = checkLayering ["GHC","Compiler","CoreToByteCode"] [ ["GHC","IR","Core"]
+                                                                      , ["GHC","IR","ByteCode"]
+                                                                      ]
+   }
+
+checkLayerCoreToInterface :: DepOptions
+checkLayerCoreToInterface = defaultOptions
+   { outputFile = "ghc_layer_coretointerface.png"
+   , filterImport = checkLayering ["GHC","Compiler","CoreToInterface"] [ ["GHC","IR","Core"]
+                                                                       , ["GHC","IR","Interface"]
+                                                                       ]
+   }
+
+checkLayerStgToCmm :: DepOptions
+checkLayerStgToCmm = defaultOptions
+   { outputFile = "ghc_layer_stgtocmm.png"
+   , filterImport = checkLayering ["GHC","Compiler","StgToCmm"] [ ["GHC","IR","Stg"]
+                                                                , ["GHC","IR","Cmm"]
+                                                                ]
+   }
+
+checkLayerCmmToAsm :: DepOptions
+checkLayerCmmToAsm = defaultOptions
+   { outputFile = "ghc_layer_cmmtoasm.png"
+   , filterImport = checkLayering ["GHC","Compiler","CmmToAsm"] [ ["GHC","IR","Cmm"] ]
+   }
+
+checkLayerCmmToLlvm :: DepOptions
+checkLayerCmmToLlvm = defaultOptions
+   { outputFile = "ghc_layer_cmmtollvm.png"
+   , filterImport = checkLayering ["GHC","Compiler","CmmToLlvm"] [ ["GHC","IR","Cmm"]
+                                                                 , ["GHC","IR","Llvm"]
+                                                                 ]
+   }
+
+
+
 
 
 data Input  = File FilePath | Module ModName

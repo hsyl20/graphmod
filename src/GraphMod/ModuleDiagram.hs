@@ -13,7 +13,7 @@ import Diagrams.Backend.Rasterific
 import GraphMod.Utils
 
 import Data.Tree
-import Data.List (sortOn, isPrefixOf, sort)
+import Data.List (sortOn, sort)
 import Data.List.Extra (nubOn)
 import Data.Maybe (mapMaybe)
 import Control.Arrow (second)
@@ -34,16 +34,15 @@ data DepOptions = DepOptions
    , showSourceDeps         :: Bool
    , arrowShaftAngle        :: Float
    , externArrowShaftAngle  :: Float
+   , outputFile             :: String
+   , scaleFactor            :: Float
    }
 
 defaultOptions :: DepOptions
 defaultOptions = DepOptions
    { filterModule           = \_ _ -> True
-   --, filterImport           = \_ _ -> True
-   , filterImport           = checkLayering ["GHC","Compiler","CoreToByteCode"] [ ["GHC","IR","ByteCode"]
-                                                                               , ["GHC","IR","Core"]
-                                                                               ]
-   , filterExternImport     = not . (["GHC"] `isPrefixOf`)
+   , filterImport           = \_ _ -> True
+   , filterExternImport     = const True
    , showExternModules      = False
    , showIndependentModules = False
    , showSiblingsDeps       = False
@@ -53,31 +52,14 @@ defaultOptions = DepOptions
    , showSourceDeps         = True
    , arrowShaftAngle        = 1/24
    , externArrowShaftAngle  = 1/60
+   , outputFile             = "deps.png"
+   , scaleFactor            = 1
    }
-
-ghcCommons :: [ModuleName]
-ghcCommons =
-   [ ["GHC","Entity"]
-   , ["GHC","Data"]
-   , ["GHC","Utils"]
-   , ["GHC","Builtin"]
-   , ["GHC","Config"]
-   , ["GHC","RTS"]
-   ]
-   
-checkLayering :: ModuleName -> [ModuleName] -> ModuleName -> Import -> Bool
-checkLayering layer allowed name imp =
-   (layer `isPrefixOf` name)
-   && checkLayeringFilter (importName imp) (layer : allowed ++ ghcCommons)
-
-checkLayeringFilter :: ModuleName -> [ModuleName] -> Bool
-checkLayeringFilter name allowed = not (any (`isPrefixOf` name) allowed)
-
 
 make_diagrams :: DepOptions -> [(ModName,[Import])] -> IO ()
 make_diagrams DepOptions{..} rawModuleImports = do
       --renderSVG' "deps.svg" (SVGOptions (mkWidth 3000) Nothing "" [] True) diag
-      renderRasterific "deps.png" (mkWidth 10000) diag
+      renderRasterific outputFile (mkWidth diagWidth) diag
    where
 
       -- First we have the list of the considered modules and their imports in
@@ -207,9 +189,18 @@ make_diagrams DepOptions{..} rawModuleImports = do
                                                 else dashingG [0.3,0.3] 0
          ) # named (qname)
 
+      maxChildren :: Tree a -> Int
+      maxChildren (Node _ []) = 1
+      maxChildren (Node _ cs) = max (length cs) (sum (fmap maxChildren cs))
+
       sumChildren :: Tree a -> Int
       sumChildren (Node _ []) = 1
       sumChildren (Node _ cs) = max (length cs) (sum (fmap sumChildren cs))
+
+      diagWidth = scaleFactor * (fromIntegral $ 200 * maximum
+         [ sum (fmap maxChildren filteredModuleForest)
+         , if showExternModules then length externImports else 0
+         ])
 
 
 

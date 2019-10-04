@@ -67,55 +67,55 @@ sourceImports = defaultOptions
 checkLayerHaskellToCore :: DepOptions
 checkLayerHaskellToCore = defaultOptions
    { outputFile = "ghc_layer_haskelltocore.png"
-   , filterImport = checkLayering ["GHC","Compiler","HaskellToCore"] [ ["GHC","IR","Haskell"]
-                                                                     , ["GHC","IR","Core"]
-                                                                     ]
+   , filterImport = checkLayering ["GHC","HsToCore"] [ ["GHC","Hs"]
+                                                     , ["GHC","Core"]
+                                                     ]
    }
 
 checkLayerCoreToStg :: DepOptions
 checkLayerCoreToStg = defaultOptions
    { outputFile = "ghc_layer_coretostg.png"
-   , filterImport = checkLayering ["GHC","Compiler","CoreToStg"] [ ["GHC","IR","Core"]
-                                                                 , ["GHC","IR","Stg"]
-                                                                 ]
+   , filterImport = checkLayering ["GHC","CoreToStg"] [ ["GHC","Core"]
+                                                      , ["GHC","Stg"]
+                                                      ]
    }
 
 checkLayerCoreToByteCode :: DepOptions
 checkLayerCoreToByteCode = defaultOptions
    { outputFile = "ghc_layer_coretobytecode.png"
-   , filterImport = checkLayering ["GHC","Compiler","CoreToByteCode"] [ ["GHC","IR","Core"]
-                                                                      , ["GHC","IR","ByteCode"]
-                                                                      ]
+   , filterImport = checkLayering ["GHC","CoreToByteCode"] [ ["GHC","Core"]
+                                                           , ["GHC","ByteCode"]
+                                                           ]
    }
 
 checkLayerCoreToInterface :: DepOptions
 checkLayerCoreToInterface = defaultOptions
    { outputFile = "ghc_layer_coretointerface.png"
-   , filterImport = checkLayering ["GHC","Compiler","CoreToInterface"] [ ["GHC","IR","Core"]
-                                                                       , ["GHC","IR","Interface"]
-                                                                       ]
+   , filterImport = checkLayering ["GHC","CoreToInterface"] [ ["GHC","Core"]
+                                                            , ["GHC","Interface"]
+                                                            ]
    }
 
 checkLayerStgToCmm :: DepOptions
 checkLayerStgToCmm = defaultOptions
    { outputFile = "ghc_layer_stgtocmm.png"
-   , filterImport = checkLayering ["GHC","Compiler","StgToCmm"] [ ["GHC","IR","Stg"]
-                                                                , ["GHC","IR","Cmm"]
-                                                                ]
+   , filterImport = checkLayering ["GHC","StgToCmm"] [ ["GHC","Stg"]
+                                                     , ["GHC","Cmm"]
+                                                     ]
    }
 
 checkLayerCmmToAsm :: DepOptions
 checkLayerCmmToAsm = defaultOptions
    { outputFile = "ghc_layer_cmmtoasm.png"
-   , filterImport = checkLayering ["GHC","Compiler","CmmToAsm"] [ ["GHC","IR","Cmm"] ]
+   , filterImport = checkLayering ["GHC","CmmToAsm"] [ ["GHC","Cmm"] ]
    }
 
 checkLayerCmmToLlvm :: DepOptions
 checkLayerCmmToLlvm = defaultOptions
    { outputFile = "ghc_layer_cmmtollvm.png"
-   , filterImport = checkLayering ["GHC","Compiler","CmmToLlvm"] [ ["GHC","IR","Cmm"]
-                                                                 , ["GHC","IR","Llvm"]
-                                                                 ]
+   , filterImport = checkLayering ["GHC","CmmToLlvm"] [ ["GHC","Cmm"]
+                                                      , ["GHC","Llvm"]
+                                                      ]
    }
 
 

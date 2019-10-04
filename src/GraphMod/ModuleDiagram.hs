@@ -17,7 +17,17 @@ import Data.List (sortOn, sort)
 import Data.List.Extra (nubOn)
 import Data.Maybe (mapMaybe)
 import Control.Arrow (second)
-import Haskus.Utils.Flow ((|>))
+
+-- | Apply a function
+--
+-- >>> 5 |> (*2)
+-- 10
+(|>) :: a -> (a -> b) -> b
+{-# INLINABLE (|>) #-}
+x |> f = f x
+
+infixl 0 |>
+
 
 type ModuleName = [String]
 

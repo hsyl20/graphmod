@@ -30,6 +30,8 @@ main = do xs <- getArgs
                      make_diagrams checkLayerCmmToAsm hsfiles
                      make_diagrams checkLayerCmmToLlvm hsfiles
                      make_diagrams sourceImports hsfiles
+                     make_diagrams coreSourceImports hsfiles
+                     make_diagrams coreToCoreSourceImports hsfiles
               where opts = foldr ($) default_opts fs
 
             _ -> hPutStrLn stderr $
@@ -58,6 +60,20 @@ checkLayering layer allowed name imp =
 checkLayeringFilter :: ModuleName -> [ModuleName] -> Bool
 checkLayeringFilter name allowed = not (any (`isPrefixOf` name) allowed)
 
+coreToCoreSourceImports :: DepOptions
+coreToCoreSourceImports = defaultOptions
+   { outputFile     = "ghc_coreToCore_source_imports"
+   , showNormalDeps = False
+   , filterImport = checkLayering ["GHC","CoreToCore"] []
+   }
+
+coreSourceImports :: DepOptions
+coreSourceImports = defaultOptions
+   { outputFile     = "ghc_core_source_imports"
+   , showNormalDeps = False
+   , filterImport = checkLayering ["GHC","Core"] []
+   }
+
 sourceImports :: DepOptions
 sourceImports = defaultOptions
    { outputFile     = "ghc_source_imports.png"
@@ -66,7 +82,7 @@ sourceImports = defaultOptions
 
 checkLayerHaskellToCore :: DepOptions
 checkLayerHaskellToCore = defaultOptions
-   { outputFile = "ghc_layer_haskelltocore.png"
+   { outputFile = "ghc_layer_haskelltocore"
    , filterImport = checkLayering ["GHC","HsToCore"] [ ["GHC","Hs"]
                                                      , ["GHC","Core"]
                                                      ]
@@ -74,7 +90,7 @@ checkLayerHaskellToCore = defaultOptions
 
 checkLayerCoreToStg :: DepOptions
 checkLayerCoreToStg = defaultOptions
-   { outputFile = "ghc_layer_coretostg.png"
+   { outputFile = "ghc_layer_coretostg"
    , filterImport = checkLayering ["GHC","CoreToStg"] [ ["GHC","Core"]
                                                       , ["GHC","Stg"]
                                                       ]
@@ -82,7 +98,7 @@ checkLayerCoreToStg = defaultOptions
 
 checkLayerCoreToByteCode :: DepOptions
 checkLayerCoreToByteCode = defaultOptions
-   { outputFile = "ghc_layer_coretobytecode.png"
+   { outputFile = "ghc_layer_coretobytecode"
    , filterImport = checkLayering ["GHC","CoreToByteCode"] [ ["GHC","Core"]
                                                            , ["GHC","ByteCode"]
                                                            ]
@@ -90,7 +106,7 @@ checkLayerCoreToByteCode = defaultOptions
 
 checkLayerCoreToInterface :: DepOptions
 checkLayerCoreToInterface = defaultOptions
-   { outputFile = "ghc_layer_coretointerface.png"
+   { outputFile = "ghc_layer_coretointerface"
    , filterImport = checkLayering ["GHC","CoreToInterface"] [ ["GHC","Core"]
                                                             , ["GHC","Interface"]
                                                             ]
@@ -98,7 +114,7 @@ checkLayerCoreToInterface = defaultOptions
 
 checkLayerStgToCmm :: DepOptions
 checkLayerStgToCmm = defaultOptions
-   { outputFile = "ghc_layer_stgtocmm.png"
+   { outputFile = "ghc_layer_stgtocmm"
    , filterImport = checkLayering ["GHC","StgToCmm"] [ ["GHC","Stg"]
                                                      , ["GHC","Cmm"]
                                                      ]
@@ -106,13 +122,13 @@ checkLayerStgToCmm = defaultOptions
 
 checkLayerCmmToAsm :: DepOptions
 checkLayerCmmToAsm = defaultOptions
-   { outputFile = "ghc_layer_cmmtoasm.png"
+   { outputFile = "ghc_layer_cmmtoasm"
    , filterImport = checkLayering ["GHC","CmmToAsm"] [ ["GHC","Cmm"] ]
    }
 
 checkLayerCmmToLlvm :: DepOptions
 checkLayerCmmToLlvm = defaultOptions
-   { outputFile = "ghc_layer_cmmtollvm.png"
+   { outputFile = "ghc_layer_cmmtollvm"
    , filterImport = checkLayering ["GHC","CmmToLlvm"] [ ["GHC","Cmm"]
                                                       , ["GHC","Llvm"]
                                                       ]

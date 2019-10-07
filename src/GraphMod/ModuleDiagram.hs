@@ -8,8 +8,9 @@
 module GraphMod.ModuleDiagram where
 
 import Diagrams.Prelude hiding ((|>))
---import Diagrams.Backend.SVG
+import Diagrams.Backend.SVG
 import Diagrams.Backend.Rasterific
+import Diagrams.TwoD.Text
 import GraphMod.Utils
 
 import Data.Tree
@@ -68,8 +69,8 @@ defaultOptions = DepOptions
 
 make_diagrams :: DepOptions -> [(ModName,[Import])] -> IO ()
 make_diagrams DepOptions{..} rawModuleImports = do
-      --renderSVG' "deps.svg" (SVGOptions (mkWidth 3000) Nothing "" [] True) diag
-      renderRasterific outputFile (mkWidth diagWidth) diag
+      renderSVG' (outputFile ++ ".svg") (SVGOptions (mkWidth 3000) Nothing "" [] True) diag
+      --renderRasterific (outputFile ++ ".png") (mkWidth diagWidth) diag
    where
 
       -- First we have the list of the considered modules and their imports in
@@ -138,8 +139,8 @@ make_diagrams DepOptions{..} rawModuleImports = do
       -- Finally we draw the diagrams
       ----------------------------------------------------
 
-      --diag :: QDiagram SVG V2 Float Any
-      diag :: QDiagram Rasterific V2 Float Any
+      diag :: QDiagram SVG V2 Float Any
+      --diag :: QDiagram Rasterific V2 Float Any
       diag = vsep 4
                [ drawModuleForest
                , if showExternModules
@@ -149,55 +150,56 @@ make_diagrams DepOptions{..} rawModuleImports = do
                         |> connectModules moduleHierarchy
                         |> connectDeps normalArrow filteredNormalDeps
                         |> connectDeps sourceArrow filteredSourceDeps
+         where
 
-      drawExternModule m = (text (joinModName mname) <> rect 25 2 # lwG 0.2 # lc purple) # named mname
-         where mname = m
-      
-      drawModuleForest = hsep 2 (fmap diagModuleForest filteredModuleForest) 
+            drawExternModule m = (text (joinModName mname) <> rect 25 2 # lwG 0.2 # lc purple) # named mname
+               where mname = m
+            
+            drawModuleForest = hsep 2 (fmap diagModuleForest filteredModuleForest) 
 
-      moduleArrow m1 m2 = connectOutside' (with & shaftStyle %~ lwG 0.1 . lc gray
-                                                & headLength .~ global 1
-                                                & tailLength .~ global 1
-                                                & arrowHead  .~ mempty
-                                          ) m1 m2
+            moduleArrow m1 m2 = connectOutside' (with & shaftStyle %~ lwG 0.1 . lc gray
+                                                      & headLength .~ global 1
+                                                      & tailLength .~ global 1
+                                                      & arrowHead  .~ mempty
+                                                ) m1 m2
 
-      normalArrow m1 m2    = connectOutside' (with & shaftStyle %~ lwG 0.1 . lc blue . opacity 0.5
-                                                & headLength .~ global 1
-                                                & tailLength .~ global 1
-                                                & arrowShaft .~ (arc yDir (makeArrowShaftAngle m2 @@ turn))
-                                                & headStyle  %~ fc blue
-                                          ) m1 m2
+            normalArrow m1 m2    = connectOutside' (with & shaftStyle %~ lwG 0.1 . lc blue . opacity 0.5
+                                                      & headLength .~ global 1
+                                                      & tailLength .~ global 1
+                                                      & arrowShaft .~ (arc yDir (makeArrowShaftAngle m2 @@ turn))
+                                                      & headStyle  %~ fc blue
+                                                ) m1 m2
 
-      sourceArrow m1 m2 = connectOutside' (with & shaftStyle %~ lwG 0.1 . lc red . opacity 0.5
-                                                & headLength .~ global 1
-                                                & tailLength .~ global 1
-                                                & arrowShaft .~ (arc yDir (makeArrowShaftAngle m2 @@ turn))
-                                                & headStyle  %~ fc red
-                                          ) m1 m2
+            sourceArrow m1 m2 = connectOutside' (with & shaftStyle %~ lwG 0.1 . lc red . opacity 0.5
+                                                      & headLength .~ global 1
+                                                      & tailLength .~ global 1
+                                                      & arrowShaft .~ (arc yDir (makeArrowShaftAngle m2 @@ turn))
+                                                      & headStyle  %~ fc red
+                                                ) m1 m2
 
-      makeArrowShaftAngle tgt = if isExternalModule tgt then externArrowShaftAngle else arrowShaftAngle
+            makeArrowShaftAngle tgt = if isExternalModule tgt then externArrowShaftAngle else arrowShaftAngle
 
-      connectModules [] d         = d
-      connectModules ((a,b):cs) d = connectModules cs (d # moduleArrow a b)
+            connectModules [] d         = d
+            connectModules ((a,b):cs) d = connectModules cs (d # moduleArrow a b)
 
-      connectDeps _ [] d                  = d
-      connectDeps arr ((name,iname):cs) d = connectDeps arr cs (d # arr name iname)
+            connectDeps _ [] d                  = d
+            connectDeps arr ((name,iname):cs) d = connectDeps arr cs (d # arr name iname)
 
-      diagModuleForest n
-         | null (subForest n) = drawModule (rootLabel n)
-         | otherwise          = 
-            vsep (2*sqrt (1 + fromIntegral (sumChildren n)))
-            [ drawModule (rootLabel n)
-            , center (hsep 1 (map diagModuleForest (subForest n)))
-            ]
+            diagModuleForest n
+               | null (subForest n) = drawModule (rootLabel n)
+               | otherwise          = 
+                  vsep (2*sqrt (1 + fromIntegral (sumChildren n)))
+                  [ drawModule (rootLabel n)
+                  , center (hsep 1 (map diagModuleForest (subForest n)))
+                  ]
 
 
-      drawModule (lbl,qname,_) =
-         (text lbl 
-         <> rect 14 2 # lwG 0.2 # lc gray # if doesModuleExist qname
-                                                then id
-                                                else dashingG [0.3,0.3] 0
-         ) # named (qname)
+            drawModule (lbl,qname,_) =
+               (text lbl 
+               <> rect 14 2 # lwG 0.2 # lc gray # if doesModuleExist qname
+                                                      then id
+                                                      else dashingG [0.3,0.3] 0
+               ) # named (qname)
 
       maxChildren :: Tree a -> Int
       maxChildren (Node _ []) = 1

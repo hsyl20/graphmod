@@ -17,6 +17,8 @@ import Data.Tree
 import Data.List (sortOn, sort)
 import Data.List.Extra (nubOn)
 import Data.Maybe (mapMaybe)
+import qualified Data.Map as Map
+import Data.Map (Map)
 import Control.Arrow (second)
 
 -- | Apply a function
@@ -47,6 +49,7 @@ data DepOptions = DepOptions
    , externArrowShaftAngle  :: Float
    , outputFile             :: String
    , scaleFactor            :: Float
+   , renameModules          :: Map ModuleName ModuleName
    }
 
 defaultOptions :: DepOptions
@@ -65,17 +68,27 @@ defaultOptions = DepOptions
    , externArrowShaftAngle  = 1/60
    , outputFile             = "deps.png"
    , scaleFactor            = 1
+   , renameModules          = Map.empty
    }
 
 make_diagrams :: DepOptions -> [(ModName,[Import])] -> IO ()
 make_diagrams DepOptions{..} rawModuleImports = do
-      renderSVG' (outputFile ++ ".svg") (SVGOptions (mkWidth 3000) Nothing "" [] True) diag
+      renderSVG' (outputFile ++ ".svg") (SVGOptions (mkWidth 1000) Nothing "" [] True) diag
       --renderRasterific (outputFile ++ ".png") (mkWidth diagWidth) diag
    where
+      -- Rename modules
+      renameName n = Map.lookup n renameModules
+      renameImp i = case renameName (importName i) of
+         Nothing -> i
+         Just n  -> i { importName = n }
+      renameModImp (m,is) = case renameName m of
+         Nothing -> (m,  fmap renameImp is)
+         Just m' -> (m', fmap renameImp is)
+      renamedModuleImports = fmap renameModImp rawModuleImports
 
       -- First we have the list of the considered modules and their imports in
       -- `rawModuleImports`. We allow module filtering with `filterModules`.
-      filteredModules = filter (uncurry filterModule) rawModuleImports
+      filteredModules = filter (uncurry filterModule) renamedModuleImports
 
       -- Filter imports
       filteredImports = fmap (\x -> second (filter (filterImport (fst x))) x) filteredModules

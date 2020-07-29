@@ -66,7 +66,7 @@ defaultOptions = DepOptions
    , showSourceDeps         = True
    , arrowShaftAngle        = 1/24
    , externArrowShaftAngle  = 1/60
-   , outputFile             = "deps.png"
+   , outputFile             = "deps"
    , scaleFactor            = 1
    , renameModules          = Map.empty
    }
